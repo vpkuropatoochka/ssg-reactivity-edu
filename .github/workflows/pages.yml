@@ -7,20 +7,15 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: publish-reactivity
   cancel-in-progress: false
 
 jobs:
-  publish:
+  build:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.pages.outputs.page_url }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -34,10 +29,30 @@ jobs:
           python scripts/check-site.py --root build --base-path /subdir/reactivity/
           grep -Fq 'content="reactivity-derived-state"' build/index.html
           printf '%s\n' "$GITHUB_SHA" > build/revision.txt
-      - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
           path: build
+      - name: Upload site for Helios
+        if: vars.HELIOS_ENABLED == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: helios-site
+          path: build
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy-pages:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
       - uses: actions/deploy-pages@v4
         id: pages
       - name: Verify GitHub Pages response
@@ -47,8 +62,18 @@ jobs:
           curl --fail --silent --show-error --retry 5 --retry-all-errors "${SITE_URL%/}/" -o /tmp/pages.html
           grep -Fq 'content="reactivity-derived-state"' /tmp/pages.html
           test "$(curl --fail --silent --show-error --retry 5 --retry-all-errors "${SITE_URL%/}/revision.txt")" = "$GITHUB_SHA"
+
+  deploy-helios:
+    if: vars.HELIOS_ENABLED == 'true'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download site for Helios
+        uses: actions/download-artifact@v8
+        with:
+          name: helios-site
+          path: build
       - name: Publish to Helios
-        if: vars.HELIOS_ENABLED == 'true'
         env:
           HELIOS_USER: ${{ secrets.HELIOS_USER }}
           HELIOS_SSH_KEY: ${{ secrets.HELIOS_SSH_KEY }}
