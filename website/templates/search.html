@@ -1,0 +1,23 @@
+{% extends "page.html" %}
+{% block head %}
+  <script defer src="{{ '/static/search.js'|url }}"></script>
+{% endblock %}
+{% block body %}
+  {{ super() }}
+  <form id="site-search" role="search">
+    <label for="search-query">Запрос</label>
+    <div class="search-controls">
+      <input id="search-query" type="search" name="q" maxlength="200" placeholder="Например, формула">
+      <button type="submit">Найти</button>
+    </div>
+  </form>
+  <p id="search-status" role="status"></p>
+  <ul id="search-results"></ul>
+  {% set index = namespace(pages=[]) %}
+  {% set home = site.get('/') %}
+  {% for page in [home] + home.children.all() if page._path != this._path %}
+    {% set index.pages = index.pages + [{'title': page.title, 'url': page|url, 'text': page.body|replace('><', '> <')|striptags}] %}
+  {% endfor %}
+  <script type="application/json" id="search-index">{{ index.pages|tojson }}</script>
+  <noscript><p>Для поиска включите JavaScript.</p></noscript>
+{% endblock %}

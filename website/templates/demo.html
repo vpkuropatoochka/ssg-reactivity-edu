@@ -1,0 +1,19 @@
+{% extends "page.html" %}
+{% block head %}
+  <script defer src="{{ '/static/demo.js'|url }}"></script>
+{% endblock %}
+{% block body %}
+  {{ super() }}
+  <section class="panel" aria-labelledby="demo-title">
+    <h2 id="demo-title">Список задач</h2>
+    <fieldset id="task-list" disabled>
+      <legend>Отметьте выполненные задачи</legend>
+      <label><input type="checkbox"> Подготовить данные</label>
+      <label><input type="checkbox"> Проверить результат</label>
+      <label><input type="checkbox"> Описать вывод</label>
+    </fieldset>
+    <output id="task-progress" aria-live="polite">Выполнено 0 из 3 (0 %)</output>
+    <noscript><p>Включите JavaScript, чтобы менять отметки и проверять пересчёт.</p></noscript>
+  </section>
+  <p class="next"><a href="{{ '/projects'|url }}">Посмотреть реализацию на React и Vue →</a></p>
+{% endblock %}

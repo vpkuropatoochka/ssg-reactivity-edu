@@ -1,0 +1,73 @@
+name: Build and publish Lektor
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: publish-reactivity
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Build and validate
+        run: |
+          python -m pip install -r requirements.txt
+          lektor --project website build --output-path "$PWD/build" --buildstate-path "$RUNNER_TEMP/lektor-state"
+          python scripts/check-site.py --root build
+          python scripts/check-site.py --root build --base-path /subdir/reactivity/
+          grep -Fq 'content="reactivity-derived-state"' build/index.html
+          printf '%s\n' "$GITHUB_SHA" > build/revision.txt
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: build
+      - uses: actions/deploy-pages@v4
+        id: pages
+      - name: Verify GitHub Pages response
+        env:
+          SITE_URL: ${{ steps.pages.outputs.page_url }}
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-all-errors "${SITE_URL%/}/" -o /tmp/pages.html
+          grep -Fq 'content="reactivity-derived-state"' /tmp/pages.html
+          test "$(curl --fail --silent --show-error --retry 5 --retry-all-errors "${SITE_URL%/}/revision.txt")" = "$GITHUB_SHA"
+      - name: Publish to Helios
+        if: vars.HELIOS_ENABLED == 'true'
+        env:
+          HELIOS_USER: ${{ secrets.HELIOS_USER }}
+          HELIOS_SSH_KEY: ${{ secrets.HELIOS_SSH_KEY }}
+          HELIOS_KNOWN_HOSTS: ${{ vars.HELIOS_KNOWN_HOSTS }}
+          HELIOS_URL: ${{ vars.HELIOS_URL }}
+        run: |
+          set -eu
+          : "${HELIOS_USER:?Set HELIOS_USER}" "${HELIOS_SSH_KEY:?Set HELIOS_SSH_KEY}"
+          : "${HELIOS_KNOWN_HOSTS:?Set HELIOS_KNOWN_HOSTS}" "${HELIOS_URL:?Set HELIOS_URL}"
+          [[ "$HELIOS_USER" =~ ^s[0-9]+$ ]]
+          ssh_dir="$(mktemp -d)"
+          trap 'rm -r "$ssh_dir"' EXIT
+          umask 077
+          printf '%s\n' "$HELIOS_SSH_KEY" > "$ssh_dir/id"
+          printf '%s\n' "$HELIOS_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          transport="ssh -p 2222 -i $ssh_dir/id -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$ssh_dir/known_hosts"
+          target="$HELIOS_USER@helios.cs.ifmo.ru"
+          $transport "$target" 'mkdir -p "$HOME/public_html/reactivity"'
+          rsync -r --delete --exclude='.lektor/' --chmod=D755,F644 -e "$transport" build/ "$target:public_html/reactivity/"
+          curl --fail --silent --show-error "${HELIOS_URL%/}/" -o /tmp/helios.html
+          grep -Fq 'content="reactivity-derived-state"' /tmp/helios.html
+          test "$(curl --fail --silent --show-error "${HELIOS_URL%/}/revision.txt")" = "$GITHUB_SHA"

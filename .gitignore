@@ -1,0 +1,12 @@
+.venv/
+.bootstrap-venv/
+build/
+site/
+.cache/
+__pycache__/
+*.py[cod]
+.DS_Store
+node_modules/
+_build/
+evidence/01-local/
+evidence/02-reactivity/

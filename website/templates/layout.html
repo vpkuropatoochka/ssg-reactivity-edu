@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="site-id" content="reactivity-derived-state">
+  <link rel="stylesheet" href="{{ '/static/style.css'|url }}">
+  {% block head %}{% endblock %}
+  <title>{% block title %}{% endblock %} · {{ config.PROJECT.name }}</title>
+</head>
+<body>
+  <header>
+    <a class="site-title" href="{{ '/'|url }}">{{ config.PROJECT.name }}</a>
+    <nav aria-label="Основная навигация">
+      {% for path, label in [
+        ('/', 'Главная'),
+        ('/projects', 'React и Vue'),
+        ('/math', 'Формула'),
+        ('/search', 'Поиск'),
+        ('/about', 'О сайте')
+      ] %}
+        <a href="{{ path|url }}"{% if this._path == path %} aria-current="page"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </nav>
+  </header>
+  <main>
+    {% block body %}{% endblock %}
+  </main>
+  <footer>
+    Учебный сайт · <a href="{{ '/about'|url }}#licenses">Лицензии</a>
+  </footer>
+</body>
+</html>

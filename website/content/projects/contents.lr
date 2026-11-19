@@ -1,0 +1,72 @@
+title: Один расчёт в React и Vue
+---
+body:
+
+**Вопрос.** Где хранить число выполненных задач, чтобы оно всегда соответствовало списку?
+
+В обоих примерах исходное состояние — массив из трёх логических значений. Каждое значение соответствует одной задаче. Счётчик получается из массива, а процент — из счётчика и длины массива.
+
+## React
+
+Обновление через `setTasks` вызывает повторный рендер компонента. Во время рендера компонент заново вычисляет `completed` и `percent`.
+
+```jsx
+import { useState } from 'react';
+
+export default function Progress() {
+  const [tasks, setTasks] = useState([false, false, false]);
+  const completed = tasks.filter(Boolean).length;
+  const percent = Math.round(100 * completed / tasks.length);
+
+  return (
+    <>
+      {tasks.map((done, index) => (
+        <label key={index}>
+          <input type="checkbox" checked={done} onChange={event => {
+            const checked = event.target.checked;
+            setTasks(current => current.map(
+              (value, position) => position === index ? checked : value
+            ));
+          }} />
+          Задача {index + 1}
+        </label>
+      ))}
+      <output>Выполнено {completed} из {tasks.length} ({percent} %)</output>
+    </>
+  );
+}
+```
+
+[React — Choosing the State Structure](https://react.dev/learn/choosing-the-state-structure)
+
+## Vue
+
+`v-model` записывает отметку в реактивный массив. `computed` обновляет вычисляемое значение при изменении зависимостей и возвращает сохранённое значение между изменениями.
+
+```vue
+<script setup>
+import { ref, computed } from 'vue';
+
+const tasks = ref([false, false, false]);
+const completed = computed(() => tasks.value.filter(Boolean).length);
+const percent = computed(() =>
+  Math.round(100 * completed.value / tasks.value.length)
+);
+</script>
+
+<template>
+  <label v-for="(_, index) in tasks" :key="index">
+    <input v-model="tasks[index]" type="checkbox">
+    Задача {{ index + 1 }}
+  </label>
+  <output>Выполнено {{ completed }} из {{ tasks.length }} ({{ percent }} %)</output>
+</template>
+```
+
+[Vue — Computed Properties](https://vuejs.org/guide/essentials/computed.html)
+
+## Проверочный сценарий
+
+Начните с пустых отметок. По очереди отметьте три задачи, затем снимите одну отметку. Ожидаемый результат после каждого шага — **0 %, 33 %, 67 %, 100 %, 67 %**. Этот сценарий можно повторить [в демонстрации](../).
+
+**Вывод.** Хранить достаточно отметок. React вычисляет итог при рендере, Vue выражает тот же расчёт через `computed`. В обоих случаях список остаётся единым источником данных для счётчика.
