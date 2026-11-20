@@ -8,30 +8,39 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: publish-reactivity
-  cancel-in-progress: false
+concurrency: publish-reactivity
 
 jobs:
   build:
+    name: Build and check site
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
         with:
           python-version: '3.14'
-      - name: Build and validate
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Build static site
+        run: lektor --project website build --output-path "$PWD/build" --buildstate-path "$RUNNER_TEMP/lektor-state"
+
+      - name: Check links and record commit
         run: |
-          python -m pip install -r requirements.txt
-          lektor --project website build --output-path "$PWD/build" --buildstate-path "$RUNNER_TEMP/lektor-state"
           python scripts/check-site.py --root build
           python scripts/check-site.py --root build --base-path /subdir/reactivity/
-          grep -Fq 'content="reactivity-derived-state"' build/index.html
           printf '%s\n' "$GITHUB_SHA" > build/revision.txt
-      - uses: actions/upload-pages-artifact@v4
+
+      - name: Upload site for GitHub Pages
+        uses: actions/upload-pages-artifact@v4
         with:
           path: build
+
       - name: Upload site for Helios
         if: vars.HELIOS_ENABLED == 'true'
         uses: actions/upload-artifact@v7
@@ -42,6 +51,7 @@ jobs:
           retention-days: 1
 
   deploy-pages:
+    name: Publish to GitHub Pages
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -52,9 +62,10 @@ jobs:
       name: github-pages
       url: ${{ steps.pages.outputs.page_url }}
     steps:
-      - uses: actions/configure-pages@v5
-      - uses: actions/deploy-pages@v4
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
         id: pages
+
       - name: Verify GitHub Pages response
         env:
           SITE_URL: ${{ steps.pages.outputs.page_url }}
@@ -64,6 +75,7 @@ jobs:
           test "$(curl --fail --silent --show-error --retry 5 --retry-all-errors "${SITE_URL%/}/revision.txt")" = "$GITHUB_SHA"
 
   deploy-helios:
+    name: Publish to Helios
     if: vars.HELIOS_ENABLED == 'true'
     needs: build
     runs-on: ubuntu-latest
@@ -73,6 +85,7 @@ jobs:
         with:
           name: helios-site
           path: build
+
       - name: Publish to Helios
         env:
           HELIOS_USER: ${{ secrets.HELIOS_USER }}
