@@ -11,6 +11,8 @@ public="$web/reactivity-preview/$channel"
 if [[ $channel == main ]]; then public="$web/reactivity"; fi
 previous="$releases/previous"
 candidate="$releases/$release"
+replace_link=(mv -fh)
+if mv --version > /dev/null 2>&1; then replace_link=(mv -Tf); fi
 
 point() {
   local link=$1 version=$2 temporary
@@ -20,7 +22,7 @@ point() {
   fi
   temporary=$(mktemp -d "${link%/*}/.switch-XXXXXXXX") || return 1
   if ln -s "$releases/$version" "$temporary/link" &&
-    mv -Tf -- "$temporary/link" "$link"; then
+    "${replace_link[@]}" -- "$temporary/link" "$link"; then
     rmdir -- "$temporary" || true
   else
     rm -rf -- "$temporary"
