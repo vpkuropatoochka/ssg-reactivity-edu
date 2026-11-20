@@ -30,7 +30,7 @@ release="$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 directory="public_html/.reactivity-releases/$channel/$release"
 
 remote() {
-  $transport "$target" "umask 022; python3 - $*" < scripts/helios-release.py
+  $transport "$target" "bash -s -- $*" < scripts/helios-release.sh
 }
 
 echo "Helios URL: $url"
