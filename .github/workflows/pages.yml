@@ -2,18 +2,24 @@ name: Build and publish Lektor
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
   workflow_dispatch:
+    inputs:
+      helios_mode:
+        description: Helios operation
+        type: choice
+        options: [deploy, interrupt-preview, rollback]
+        default: deploy
 
 permissions:
   contents: read
 
-concurrency: publish-reactivity
+concurrency: publish-reactivity-${{ github.ref }}
 
 jobs:
   build:
     name: Build and check site
-    if: github.ref == 'refs/heads/main'
+    if: github.ref_type == 'branch' && inputs.helios_mode != 'rollback'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -37,6 +43,7 @@ jobs:
           printf '%s\n' "$GITHUB_SHA" > build/revision.txt
 
       - name: Upload site for GitHub Pages
+        if: github.ref == 'refs/heads/main' && inputs.helios_mode != 'interrupt-preview'
         uses: actions/upload-pages-artifact@v4
         with:
           path: build
@@ -52,6 +59,7 @@ jobs:
 
   deploy-pages:
     name: Publish to GitHub Pages
+    if: github.ref == 'refs/heads/main' && inputs.helios_mode != 'interrupt-preview'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -62,6 +70,8 @@ jobs:
       name: github-pages
       url: ${{ steps.pages.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v7
+
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
         id: pages
@@ -70,17 +80,25 @@ jobs:
         env:
           SITE_URL: ${{ steps.pages.outputs.page_url }}
         run: |
-          curl --fail --silent --show-error --retry 5 --retry-all-errors "${SITE_URL%/}/" -o /tmp/pages.html
-          grep -Fq 'content="reactivity-derived-state"' /tmp/pages.html
-          test "$(curl --fail --silent --show-error --retry 5 --retry-all-errors "${SITE_URL%/}/revision.txt")" = "$GITHUB_SHA"
+          for delay in 1 2 4 8 16; do
+            if bash scripts/check-delivery.sh "$SITE_URL" "$GITHUB_SHA"; then exit 0; fi
+            sleep "$delay"
+          done
+          bash scripts/check-delivery.sh "$SITE_URL" "$GITHUB_SHA"
 
   deploy-helios:
     name: Publish to Helios
-    if: vars.HELIOS_ENABLED == 'true'
+    if: >-
+      !cancelled() && github.ref_type == 'branch' &&
+      vars.HELIOS_ENABLED == 'true' &&
+      (needs.build.result == 'success' || inputs.helios_mode == 'rollback')
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+
       - name: Download site for Helios
+        if: inputs.helios_mode != 'rollback'
         uses: actions/download-artifact@v8
         with:
           name: helios-site
@@ -92,20 +110,5 @@ jobs:
           HELIOS_SSH_KEY: ${{ secrets.HELIOS_SSH_KEY }}
           HELIOS_KNOWN_HOSTS: ${{ vars.HELIOS_KNOWN_HOSTS }}
           HELIOS_URL: ${{ vars.HELIOS_URL }}
-        run: |
-          set -eu
-          : "${HELIOS_USER:?Set HELIOS_USER}" "${HELIOS_SSH_KEY:?Set HELIOS_SSH_KEY}"
-          : "${HELIOS_KNOWN_HOSTS:?Set HELIOS_KNOWN_HOSTS}" "${HELIOS_URL:?Set HELIOS_URL}"
-          [[ "$HELIOS_USER" =~ ^s[0-9]+$ ]]
-          ssh_dir="$(mktemp -d)"
-          trap 'rm -r "$ssh_dir"' EXIT
-          umask 077
-          printf '%s\n' "$HELIOS_SSH_KEY" > "$ssh_dir/id"
-          printf '%s\n' "$HELIOS_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
-          transport="ssh -p 2222 -i $ssh_dir/id -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$ssh_dir/known_hosts"
-          target="$HELIOS_USER@helios.cs.ifmo.ru"
-          $transport "$target" 'mkdir -p "$HOME/public_html/reactivity"'
-          rsync -r --delete --exclude='.lektor/' --chmod=D755,F644 -e "$transport" build/ "$target:public_html/reactivity/"
-          curl --fail --silent --show-error "${HELIOS_URL%/}/" -o /tmp/helios.html
-          grep -Fq 'content="reactivity-derived-state"' /tmp/helios.html
-          test "$(curl --fail --silent --show-error "${HELIOS_URL%/}/revision.txt")" = "$GITHUB_SHA"
+          HELIOS_MODE: ${{ inputs.helios_mode || 'deploy' }}
+        run: bash scripts/deploy-helios.sh "$HELIOS_MODE"
